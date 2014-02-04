@@ -18,7 +18,7 @@ var vsprintf = require('sprintf').vsprintf,
     locales = {},
     api = ['__', '__n', 'getLocale', 'setLocale', 'getCatalog'],
     pathsep = path.sep || '/', // ---> means win support will be available in node 0.8.x and above
-    defaultLocale, updateFiles, cookiename, extension, directory, indent;
+    defaultLocale, updateFiles, cookiename, extension, directory, indent, auditing;
 
 // public exports
 var i18n = exports;
@@ -49,6 +49,9 @@ i18n.configure = function i18nConfigure(opt) {
 
   // setting defaultLocale
   defaultLocale = (typeof opt.defaultLocale === 'string') ? opt.defaultLocale : 'en';
+
+  // enable auditing
+  auditing = (typeof opt.auditing === 'boolean') ? opt.auditing : false;
 
   // implicitly read all locales
   if (typeof opt.locales === 'object') {
@@ -412,6 +415,24 @@ function translate(locale, singular, plural) {
   if (!locales[locale][singular]) {
     locales[locale][singular] = singular;
     write(locale);
+  }
+  if( auditing ) {
+    var translationTerm = locales[locale][singular];
+    var countMarker = "☃☞";
+    if( countMarker == translationTerm.substr(0,countMarker.length) ) {
+      // Extract use count
+      var delimiterLocation = translationTerm.indexOf(",");
+      var count = translationTerm.substring(countMarker.length,delimiterLocation);
+      translationTerm = translationTerm.substr(delimiterLocation+1);
+      ++count;
+      locales[locale][singular] = countMarker + count + "," + translationTerm;
+      console.log( "Term used " + count + " times: " + translationTerm );
+    } else {
+      locales[locale][singular] = countMarker + "1," + translationTerm;
+      console.log( "Term used 1 times: " + translationTerm );
+    }
+    write(locale);
+    return translationTerm;
   }
   return locales[locale][singular];
 }
