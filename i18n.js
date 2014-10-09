@@ -3,7 +3,7 @@
  * @link        https://github.com/mashpie/i18n-node
  * @license     http://opensource.org/licenses/MIT
  *
- * @version     0.4.1
+ * @version     0.5.1
  */
 
 // dependencies and "private" vars
@@ -18,12 +18,12 @@ var vsprintf = require('sprintf').vsprintf,
     locales = {},
     api = ['__', '__n', 'getLocale', 'setLocale', 'getCatalog'],
     pathsep = path.sep || '/', // ---> means win support will be available in node 0.8.x and above
-    defaultLocale, updateFiles, cookiename, extension, directory, indent;
+    defaultLocale, updateFiles, cookiename, extension, directory, indent, objectNotation;
 
 // public exports
 var i18n = exports;
 
-i18n.version = '0.4.1';
+i18n.version = '0.5.1';
 
 i18n.configure = function i18nConfigure(opt) {
 
@@ -44,11 +44,18 @@ i18n.configure = function i18nConfigure(opt) {
   // what to use as the indentation unit (ex: "\t", "  ")
   indent = (typeof opt.indent === 'string') ? opt.indent : "\t";
 
+  // json files prefix
+  prefix = (typeof opt.prefix === 'string') ? opt.prefix : '';
+
   // where to store json files
   extension = (typeof opt.extension === 'string') ? opt.extension : '.json';
 
   // setting defaultLocale
   defaultLocale = (typeof opt.defaultLocale === 'string') ? opt.defaultLocale : 'en';
+
+  // enable object notation?
+  objectNotation = (typeof opt.objectNotation !== 'undefined') ? opt.objectNotation : false;
+  if( objectNotation === true ) objectNotation = '.';
 
   // implicitly read all locales
   if (typeof opt.locales === 'object') {
@@ -75,6 +82,11 @@ i18n.init = function i18nInit(request, response, next) {
         if (!response.locals.locale) response.locals.locale = request.locale;
       }
     }
+
+    // bind api to req also
+    if (typeof request === 'object') {
+        applyAPItoObject(request);
+    }
   }
 
   if (typeof next === 'function') {
@@ -84,12 +96,12 @@ i18n.init = function i18nInit(request, response, next) {
 
 i18n.__ = function i18nTranslate(phrase) {
   var msg, namedValues, args;
-  
+
   // Accept an object with named values as the last parameter
   // And collect all other arguments, except the first one in args
   if (
     arguments.length > 1 &&
-    arguments[arguments.length - 1] !== null && 
+    arguments[arguments.length - 1] !== null &&
     typeof arguments[arguments.length - 1] === "object"
   ) {
     namedValues = arguments[arguments.length - 1];
@@ -98,7 +110,7 @@ i18n.__ = function i18nTranslate(phrase) {
     namedValues = {};
     args = arguments.length >= 2 ? Array.prototype.slice.call(arguments, 1) : [];
   }
-  
+
   // called like __({phrase: "Hello", locale: "en"})
   if (typeof phrase === 'object') {
     if (typeof phrase.locale === 'string' && typeof phrase.phrase === 'string') {
@@ -121,17 +133,17 @@ i18n.__ = function i18nTranslate(phrase) {
   if ((/%/).test(msg) && args && args.length > 0) {
     msg = vsprintf(msg, args);
   }
-  
+
   return msg;
 };
 
 i18n.__n = function i18nTranslatePlural(singular, plural, count) {
   var msg, namedValues, args = [];
-  
+
   // Accept an object with named values as the last parameter
   if (
     arguments.length >= 2 &&
-    arguments[arguments.length - 1] !== null && 
+    arguments[arguments.length - 1] !== null &&
     typeof arguments[arguments.length - 1] === "object"
   ) {
     namedValues = arguments[arguments.length - 1];
@@ -140,7 +152,7 @@ i18n.__n = function i18nTranslatePlural(singular, plural, count) {
     namedValues = {};
     args = arguments.length >= 4 ? Array.prototype.slice.call(arguments, 3) : [];
   }
-  
+
   // called like __n({singular: "%s cat", plural: "%s cats", locale: "en"}, 3)
   if (typeof singular === 'object') {
     if (typeof singular.locale === 'string' && typeof singular.singular === 'string' && typeof singular.plural === 'string') {
@@ -155,7 +167,7 @@ i18n.__n = function i18nTranslatePlural(singular, plural, count) {
     // called like __n({singular: "%s cat", plural: "%s cats", locale: "en", count: 3})
     if(typeof singular.count === 'number' || typeof singular.count === 'string'){
       count = singular.count;
-      args.unshift(plural);      
+      args.unshift(plural);
     }
   }
   else {
@@ -179,12 +191,12 @@ i18n.__n = function i18nTranslatePlural(singular, plural, count) {
   } else {
     msg = vsprintf(msg.one, [parseInt(count, 10)]);
   }
-  
+
   // if the msg string contains {{Mustache}} patterns we render it as a mini tempalate
   if ((/{{.*}}/).test(msg)) {
     msg = Mustache.render(msg, namedValues);
   }
-  
+
   // if we have extra arguments with strings to get replaced,
   // an additional substition injects those strings afterwards
   if ((/%/).test(msg) && args && args.length > 0) {
@@ -199,7 +211,7 @@ i18n.setLocale = function i18nSetLocale(locale_or_request, locale) {
       request;
 
   // called like setLocale(req, 'en')
-  if (locale_or_request && typeof locale === 'string' && locales[locale]) {
+  if (locale_or_request && typeof locale === 'string') {
     request = locale_or_request;
     target_locale = locale;
   }
@@ -220,6 +232,12 @@ i18n.setLocale = function i18nSetLocale(locale_or_request, locale) {
       request.locale = target_locale;
     }
   }
+  else{
+    if ((request !== undefined)) {
+      request.locale = defaultLocale;
+    }
+  }
+
   return i18n.getLocale(request);
 };
 
@@ -324,33 +342,30 @@ function guessLanguage(request) {
     request.region = defaultLocale;
 
     if (language_header) {
-      language_header.split(',').forEach(function (l) {
-        var header = l.split(';', 1)[0],
-            lr = header.split('-', 2);
-        if (lr[0]) {
-          languages.push(lr[0].toLowerCase());
-        }
-        if (lr[1]) {
-          regions.push(lr[1].toLowerCase());
-        }
-      });
+      var accepted_languages = getAcceptedLanguagesFromHeader(language_header),
+          match, fallbackMatch;
+      for (var i = 0, len = accepted_languages.length; i < len; i++) {
+        var lang = accepted_languages[i],
+            lr = lang.split('-', 2),
+            parentLang = lr[0],
+            region = lr[1];
 
-      if (languages.length > 0) {
-        request.languages = languages;
-        request.language = languages[0];
+        languages.push(parentLang.toLowerCase());
+        if (region) {
+          regions.push(region.toLowerCase());
+        }
+
+        if (!match && locales[lang]) {
+          match = lang;
+        }
+
+        if (!fallbackMatch && locales[parentLang]) {
+          fallbackMatch = parentLang;
+        }
       }
 
-      if (regions.length > 0) {
-        request.regions = regions;
-        request.region = regions[0];
-
-        // to test if having region translation
-        if (request.region && request.language && locales[ request.language + "-" + request.region]){
-          //logDebug("set region") ;
-          request.language = request.language + "-" + request.region;
-        }
-
-      }
+      request.language = match || fallbackMatch || request.language;
+      request.region = regions[0] || request.region;
     }
 
     // setting the language by cookie
@@ -360,6 +375,30 @@ function guessLanguage(request) {
 
     i18n.setLocale(request, request.language);
   }
+}
+
+/**
+ * Get a sorted list of accepted languages from the HTTP Accept-Language header
+ */
+function getAcceptedLanguagesFromHeader(header) {
+  var languages = header.split(','),
+      preferences = {};
+  return languages.map(function parseLanguagePreference(item) {
+    var preferenceParts = item.trim().split(';q=');
+    if (preferenceParts.length < 2) {
+      preferenceParts[1] = 1.0;
+    } else {
+      var quality = parseFloat(preferenceParts[1])
+      preferenceParts[1] = quality ? quality : 0.0;
+    }
+    preferences[preferenceParts[0]] = preferenceParts[1];
+
+    return preferenceParts[0];
+  }).filter(function(lang) {
+    return preferences[lang] > 0;
+  }).sort(function sortLanguages(a, b) {
+    return preferences[b] - preferences[a];
+  });
 }
 
 /**
@@ -399,21 +438,176 @@ function translate(locale, singular, plural) {
     read(locale);
   }
 
+  var defaultSingular = singular;
+  var defaultPlural = plural;
+  if( objectNotation ) {
+    var indexOfColon = singular.indexOf(':');
+    // We compare against 0 instead of -1 because we don't really expect the string to start with ':'.
+    if( 0 < indexOfColon ) {
+      defaultSingular = singular.substring(indexOfColon + 1);
+      singular = singular.substring(0, indexOfColon);
+    }
+    if( plural ) {
+      indexOfColon = plural.indexOf(':');
+      if( 0 < indexOfColon ) {
+        defaultPlural = plural.substring(indexOfColon + 1);
+        plural = plural.substring(0, indexOfColon);
+      }
+    }
+  }
+
+  var accessor = localeAccessor(locale,singular);
+  var mutator = localeMutator(locale,singular);
+
   if (plural) {
-    if (!locales[locale][singular]) {
-      locales[locale][singular] = {
-        'one': singular,
-        'other': plural
-      };
+    if (!accessor()) {
+      mutator( {
+        'one': defaultSingular || singular,
+        'other': defaultPlural || plural
+      } );
       write(locale);
     }
   }
 
-  if (!locales[locale][singular]) {
-    locales[locale][singular] = singular;
+  if (!accessor()) {
+    mutator(defaultSingular || singular);
     write(locale);
   }
-  return locales[locale][singular];
+
+  return accessor();
+}
+
+/**
+ * Allows delayed access to translations nested inside objects.
+ * @param {String} locale The locale to use.
+ * @param {String} singular The singular term to look up.
+ * @param {Boolean} [allowDelayedTraversal=true] Is delayed traversal of the tree allowed?
+ * This parameter is used internally. It allows to signal the accessor that
+ * a translation was not found in the initial lookup and that an invocation
+ * of the accessor may trigger another traversal of the tree.
+ * @returns {Function} A function that, when invoked, returns the current value stored
+ * in the object at the requested location.
+ */
+function localeAccessor(locale,singular,allowDelayedTraversal) {
+  // Bail out on non-existent locales to defend against internal errors.
+  if( !locales[locale] ) return Function.prototype;
+  
+  // Handle object lookup notation
+  var indexOfDot = objectNotation && singular.indexOf( objectNotation );
+  if( objectNotation && ( 0 < indexOfDot && indexOfDot < singular.length ) ) {
+    // If delayed traversal wasn't specifically forbidden, it is allowed.
+    if( typeof allowDelayedTraversal == "undefined" ) allowDelayedTraversal = true;
+    // The accessor we're trying to find and which we want to return.
+    var accessor = null;
+    // An accessor that returns null.
+    var nullAccessor = function(){ return null; };
+    // Do we need to re-traverse the tree upon invocation of the accessor?
+    var reTraverse = false;
+    // Split the provided term and run the callback for each subterm.
+    singular.split( objectNotation ).reduce( function(object,index) {
+      // Make the accessor return null.
+      accessor = nullAccessor;
+      // If our current target object (in the locale tree) doesn't exist or
+      // it doesn't have the next subterm as a member...
+      if( null === object || !object.hasOwnProperty(index)) {
+        // ...remember that we need retraversal (because we didn't find our target).
+        reTraverse = allowDelayedTraversal;
+        // Return null to avoid deeper iterations.
+        return null;
+      }
+      // We can traverse deeper, so we generate an accessor for this current level.
+      accessor = function(){ return object[index]; }
+      // Return a reference to the next deeper level in the locale tree.
+      return object[index];
+
+    }, locales[locale]);
+    // Return the requested accessor.
+    return function() {
+      // If we need to re-traverse (because we didn't find our target term)...
+      return ( reTraverse )
+        // ...traverse again and return the new result (but don't allow further iterations)...
+        ? localeAccessor(locale,singular,false)()
+        // ...or return the previously found accessor if it was already valid.
+        : accessor();
+    };
+
+  } else {
+    // No object notation, just return an accessor that performs array lookup.
+    return function() {
+      return locales[locale][singular];
+    };
+  }
+}
+
+/**
+ * Allows delayed mutation of a translation nested inside objects.
+ * @description Construction of the mutator will attempt to locate the requested term
+ * inside the object, but if part of the branch does not exist yet, it will not be
+ * created until the mutator is actually invoked. At that point, re-traversal of the
+ * tree is performed and missing parts along the branch will be created.
+ * @param {String} locale The locale to use.
+ * @param {String} singular The singular term to look up.
+ * @param [Boolean} [allowBranching=false] Is the mutator allowed to create previously
+ * non-existent branches along the requested locale path?
+ * @returns {Function} A function that takes one argument. When the function is
+ * invoked, the targeted translation term will be set to the given value inside the locale table.
+ */
+function localeMutator(locale,singular,allowBranching) {
+  // Bail out on non-existent locales to defend against internal errors.
+  if( !locales[locale] ) return Function.prototype;
+
+  // Handle object lookup notation
+  var indexOfDot = objectNotation && singular.indexOf( objectNotation );
+  if( objectNotation && ( 0 < indexOfDot && indexOfDot < singular.length ) ) {
+    // If branching wasn't specifically allowed, disable it.
+    if( typeof allowBranching == "undefined" ) allowBranching = false;
+    // This will become the function we want to return.
+    var accessor = null;
+    // An accessor that takes one argument and returns null.
+    var nullAccessor = function(){ return null; };
+    // Are we going to need to re-traverse the tree when the mutator is invoked?
+    var reTraverse = false;
+    // Split the provided term and run the callback for each subterm.
+    singular.split( objectNotation ).reduce( function(object,index){
+      // Make the mutator do nothing.
+      accessor = nullAccessor;
+      // If our current target object (in the locale tree) doesn't exist or
+      // it doesn't have the next subterm as a member...
+      if( null === object || !object.hasOwnProperty(index)) {
+        // ...check if we're allowed to create new branches.
+        if( allowBranching ) {
+          // If we are allowed to, create a new object along the path.
+          object[index] = {};
+        } else {
+          // If we aren't allowed, remember that we need to re-traverse later on and...
+          reTraverse = true;
+          // ...return null to make the next iteration bail our early on.
+          return null;
+        }
+      }
+      // Generate a mutator for the current level.
+      accessor = function(value){ return object[index] = value; };
+      // Return a reference to the next deeper level in the locale tree.
+      return object[index];
+
+    }, locales[locale]);
+
+    // Return the final mutator.
+    return function(value){
+      // If we need to re-traverse the tree...
+      return ( reTraverse )
+        // ...invoke the search again, but allow branching this time (because here the mutator is being invoked)...
+        ? localeMutator(locale,singular,true)(value)
+        /// ...otherwise, just change the value directly.
+        : accessor(value);
+    };
+
+  } else {
+    // No object notation, just return a mutator that performs array lookup and changes the value.
+    return function(value){
+      return locales[locale][singular] = value;
+    };
+  }
 }
 
 /**
@@ -436,13 +630,13 @@ function read(locale) {
     // unable to read, so intialize that file
     // locales[locale] are already set in memory, so no extra read required
     // or locales[locale] are empty, which initializes an empty locale.json file
-    
+
     // since the current invalid locale could exist, we should back it up
     if (fs.existsSync(file)) {
       logDebug('backing up invalid locale ' + locale + ' to ' + file + '.invalid');
       fs.renameSync(file, file + '.invalid');
     }
-    
+
     logDebug('initializing ' + file);
     write(locale);
   }
@@ -496,8 +690,8 @@ function write(locale) {
 function getStorageFilePath(locale) {
   // changed API to use .json as default, #16
   var ext = extension || '.json',
-      filepath = path.normalize(directory + pathsep + locale + ext),
-      filepathJS = path.normalize(directory + pathsep + locale + '.js');
+      filepath = path.normalize(directory + pathsep + prefix + locale + ext),
+      filepathJS = path.normalize(directory + pathsep + prefix + locale + '.js');
   // use .js as fallback if already existing
   try {
     if (fs.statSync(filepathJS)) {

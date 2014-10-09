@@ -6,7 +6,7 @@ Stores language files in json files compatible to [webtranslateit](http://webtra
 Adds new strings on-the-fly when first used in your app.
 No extra parsing needed.
 
-[![Build Status](https://secure.travis-ci.org/mashpie/i18n-node.png?branch=master)](http://travis-ci.org/mashpie/i18n-node) [![NPM version](https://badge.fury.io/js/i18n.png)](http://badge.fury.io/js/i18n)
+[![Build Status](https://api.travis-ci.org/mashpie/i18n-node.svg?branch=master)](http://travis-ci.org/mashpie/i18n-node) [![NPM version](https://badge.fury.io/js/i18n.svg)](http://badge.fury.io/js/i18n)
 [![Dependency Status](https://gemnasium.com/mashpie/i18n-node.png)](https://gemnasium.com/mashpie/i18n-node)
 
 ## Install
@@ -57,9 +57,15 @@ Minimal example, just setup two locales and a project specific directory
 
 	    // setting extension of json files - defaults to '.json' (you might want to set this to '.js' according to webtranslateit)
 	    extension: '.js',
+
+	    // setting prefix of json files name - default to none '' (in case you use different locale files naming scheme (webapp-en.json), rather then just en.json)
+	    prefix: 'webapp-',
+
+	    // enable object notation
+	    objectNotation: false
 	});
 
-## Example usage in gobal scope
+## Example usage in global scope
 
 In your app, when not registered to a specific object:
 
@@ -104,6 +110,7 @@ See [tested examples](https://github.com/mashpie/i18n-node/tree/master/examples)
 * [express 3 + hbs 2 (+ cookie)](https://gist.github.com/mashpie/5246334)
 * [express 3 + mustache (+ cookie)](https://gist.github.com/mashpie/5247373)
 * [express 3 + jade 0.3 (+ cookie)](https://gist.github.com/hankwang/5994144)
+* [express 4 + + cookie](https://gist.github.com/mashpie/08e5a0ee764f7b6b1355)
 
 ## API
 
@@ -238,7 +245,7 @@ which puts *Hello Marcus, how are you today? How was your weekend.*
 
 ### mustache support
 
-You may also use [mustach](http://mustache.github.io/) syntax for your message strings. To pass named parameters to your message, just provide an object as the second parameter. You can still pass unnamed parameters by adding additional arguments.
+You may also use [mustache](http://mustache.github.io/) syntax for your message strings. To pass named parameters to your message, just provide an object as the second parameter. You can still pass unnamed parameters by adding additional arguments.
 
 	var greeting = __('Hello {{name}}, how are you today?', { name: 'Marcus' });
 
@@ -342,8 +349,55 @@ if you only want to get errors and warnings reported start your node server like
 
 Combine those settings with you existing application if any of you other modules or libs also uses __debug__
 
+## Object notation
+
+In addition to the traditional, linear translation lists, i18n also supports hierarchical translation catalogs.
+
+To enable this feature, be sure to set `objectNotation` to `true` in your `configure()` call. **Note**: If you can't or don't want to use `.` as a delimiter, set `objectNotation` to any other delimiter you like.
+
+Instead of calling `__("Hello")` you might call `__("greeting.formal")` to retrieve a formal greeting from a translation document like this one:
+
+    "greeting": {
+        "formal": "Hello",
+        "informal": "Hi",
+        "placeholder": {
+            "formal": "Hello %s",
+            "informal": "Hi %s"
+        }
+    }
+
+In the document, the translation terms, which include placeholders, are nested inside the "greeting" translation. They can be accessed and used in the same way, like so `__('greeting.placeholder.informal', 'Marcus')`.
+
+### Pluralization
+
+Object notation also supports pluralization. When making use of it, the "one" and "other" entries are used implicitly for an object in the translation document. For example, consider the following document:
+
+    "cat": {
+        "one": "Katze",
+        "other": "Katzen"
+    }
+
+When accessing these, you would use `__n("cat", "cat", 3)` to tell i18n to use both the singular and plural form of the "cat" entry. Naturally, you could also access these members explicitly with `__("cat.one")` and `__("cat.other")`.
+
+### Defaults
+
+When starting a project from scratch, your translation documents will probably be empty. i18n takes care of filling your translation documents for you. Whenever you use an unknown object, it is added to the translation documents.
+
+By default, when using object notation, the provided string literal will be inserted and returned as the default string. As an example, this is what the "greeting" object shown earlier would look like by default:
+
+    "greeting": {
+        "formal": "greeting.formal",
+        "informal": "greeting.informal"
+    }
+
+In case you would prefer to have a default string automatically inserted and returned, you can provide that default string by appending it to your object literal, delimited by a `:`. For example:
+
+    __("greeting.formal:Hello")
+    __("greeting.placeholder.informal:Hi %s")
+
 ## Changelog
 
+* 0.5.0: feature release; added {{mustache}} parsing by #85, added "object.notation" by #110, fixed buggy req.__() implementation by #111 and closed 13 issues
 * 0.4.1: stable release; merged/closed: #57, #60, #67 typo fixes; added more examples and new features: #53, #65, #66 - and some more api reference
 * 0.4.0: stable release; closed: #22, #24, #4, #10, #54; added examples, clarified concurrency usage in different template engines, added `i18n.getCatalog`
 * 0.3.9: express.js usage, named api, jscoverage + more test, refactored configure, closed: #51, #20, #16, #49
@@ -361,7 +415,7 @@ Combine those settings with you existing application if any of you other modules
 
 ## Licensed under MIT
 
-Copyright (c) 2011-2013 Marcus Spiegel <marcus.spiegel@gmail.com>
+Copyright (c) 2011-2014 Marcus Spiegel <marcus.spiegel@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
